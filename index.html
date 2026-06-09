@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>【完成版】鉄道ミッション＆位置共有</title>
+    <!-- Firebase SDKの読み込み -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
@@ -24,17 +25,19 @@
         /* タブメニューのスタイル（3タブ均等幅に変更） */
         #tab-container {
             display: none; width: 100%; max-width: 500px;
-            background: #222; border-bottom: 2px solid #444;
+            background: #222; border-bottom: 2px solid #444; margin: 0 auto;
+            overflow: hidden; /* ★修正：回り込みを枠内でリセット */
         }
         .tab-button {
             width: 33.33%; padding: 15px 0; float: left;
             background: #222; color: #888; font-weight: bold; font-size: 1.1rem;
             cursor: pointer; text-align: center; border: none; outline: none;
+            box-sizing: border-box;
         }
         .tab-button.active {
             background: #333; color: #ffcc00; border-bottom: 3px solid #ffcc00;
         }
-        .tab-content { display: none; width: 100%; max-width: 500px; padding: 20px; box-sizing: border-box; }
+        .tab-content { display: none; width: 100%; max-width: 500px; padding: 20px; box-sizing: border-box; margin: 0 auto; }
         .tab-content.active { display: block; }
 
         /* タイマー・ミッションのスタイル */
@@ -143,7 +146,8 @@
             <div id="tab3-button" class="tab-button" onclick="switchTab(3)">マップ</div>
         </div>
 
-        <div id="oni-display-bar" style="width: 100%; max-width: 500px; background: #331111; border-bottom: 1px solid #ff3333; padding: 10px 0; font-weight: bold; color: #ff5555; font-size: 1.1rem; display: none; box-sizing: border-box;">
+        <!-- ★修正：clear: both; を追加して、確実にタブの真下に配置させる -->
+        <div id="oni-display-bar" style="clear: both; width: 100%; max-width: 500px; margin: 0 auto; background: #331111; border-bottom: 1px solid #ff3333; padding: 10px 0; font-weight: bold; color: #ff5555; font-size: 1.1rem; display: none; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
             現在の鬼：<span id="current-oni-text" style="color: #fff; background: #ff3333; padding: 2px 8px; border-radius: 4px;">未設定</span>
         </div>
 
@@ -166,7 +170,7 @@
             <h1>現在地の共有</h1>
             
             <div id="master-oni-area" style="display: none; background: #331111; padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 2px solid #ff3333;">
-                <div style="color:#ff5555; font-weight:bold; margin-bottom:10px;">【マスター専用】現在の鬼を指名</div>
+                <div style="color:#ff5555; font-weight:bold; margin-bottom:10px; font-size:0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">【マスター専用】現在の鬼を指名</div>
                 <select id="oni-select" style="width:85%; margin-bottom: 10px;">
                     <option value="チームA">チームA</option>
                     <option value="チームB">チームB</option>
@@ -328,21 +332,25 @@
             } else if(tabNum === 3) {
                 document.getElementById('tab3-button').classList.add('active');
                 document.getElementById('tab3-content').classList.add('active');
-                // 🌐 タブを開いた時にマップを初期化＆リサイズ計算
                 initMapIfNeeded();
             }
         }
 
-        // 🌐 マップの初期化システム
         function initMapIfNeeded() {
             if (!map) {
-                // 大阪駅周辺を中心に初期マップを生成
                 map = L.map('map').setView([34.7024, 135.4959], 13);
+                
+                // ① まずベースとなる普通の地図を敷く
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '&copy; OpenStreetMap contributors'
+                    attribution: '&copy; OpenStreetMap'
+                }).addTo(map);
+
+                // ② その上にOpenRailwayMap（鉄道路線の強調レイヤー）を重ねて透明なシートのように貼る
+                L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: 'Style: &copy; <a href="https://www.OpenRailwayMap.org">OpenRailwayMap</a>'
                 }).addTo(map);
                 
-                // すでに読み込まれている位置データがあればプロット
                 gameRef.once('value').then((snapshot) => {
                     const data = snapshot.val();
                     const currentOni = data ? data.currentOni : "未設定";
@@ -351,7 +359,6 @@
                     });
                 });
             } else {
-                // 隠れていたマップが表示された時の枠崩れ防止処理
                 setTimeout(() => { map.invalidateSize(); }, 100);
             }
         }
@@ -421,7 +428,6 @@
                 const oniName = data.currentOni || "未設定";
                 document.getElementById('current-oni-text').textContent = oniName;
 
-                // 鬼の文字色更新
                 document.querySelectorAll('.member-location-item').forEach(item => {
                     const nameEl = item.querySelector('.member-name');
                     const locEl = item.querySelector('.member-loc');
@@ -522,7 +528,6 @@
             });
         }
 
-        // 🌐 位置情報の自己申告（GPS取得ロジックの統合）
         function submitLocation() {
             const line = document.getElementById('line-select').value;
             const station = document.getElementById('station-input').value.trim();
@@ -540,26 +545,21 @@
             const now = new Date();
             const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
 
-            // スマホのブラウザからGPSを取得
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
-                        // 取得成功時
                         saveLocationToFirebase(line, station, timeStr, position.coords.latitude, position.coords.longitude);
                     },
                     (error) => {
-                        // 取得失敗時（地下・ビル影・位置情報オフなど）は緯度経度なしでテキストのみ保存
                         saveLocationToFirebase(line, station, timeStr, null, null);
                     },
                     { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
                 );
             } else {
-                // GPS非対応ブラウザの場合
                 saveLocationToFirebase(line, station, timeStr, null, null);
             }
         }
 
-        // 🌐 Firebaseへのデータ書き込み分離処理
         function saveLocationToFirebase(line, station, timeStr, lat, lng) {
             const sendBtn = document.getElementById('send-location-btn');
             sendBtn.innerText = "現在地を申告・更新";
@@ -573,7 +573,6 @@
                 timestamp: Date.now()
             };
 
-            // 座標が取得できていればデータに追加
             if (lat !== null && lng !== null) {
                 uploadData.lat = lat;
                 uploadData.lng = lng;
@@ -628,16 +627,13 @@
                     listContainer.appendChild(item);
                 }
 
-                // 🌐 申告データが更新されたら、マップ上のピンもリアルタイム同期
                 updateMapMarkers(data, currentOni);
             });
         }
 
-        // 🌐 マップ上のマーカーを同期・描画する処理を追加
         function updateMapMarkers(data, currentOni) {
-            if (!map) return; // マップタブを一度も開いていない場合は処理スキップ
+            if (!map) return; 
 
-            // データベースから消えたチームのピンをマップから削除
             for (let team in mapMarkers) {
                 if (!data || !data[team] || !data[team].lat) {
                     map.removeLayer(mapMarkers[team]);
@@ -650,18 +646,15 @@
             for (let team in data) {
                 const pData = data[team];
                 
-                // 座標データを持っているチームのみ処理
                 if (pData.lat && pData.lng) {
                     const isOni = (team === currentOni);
-                    const markerColor = isOni ? '#ff3333' : '#00ccff'; // 鬼は赤、逃走者は青
+                    const markerColor = isOni ? '#ff3333' : '#00ccff'; 
                     
                     if (mapMarkers[team]) {
-                        // 既存のピンがあれば位置と色、ポップアップ内容を更新
                         mapMarkers[team].setLatLng([pData.lat, pData.lng]);
                         mapMarkers[team].setStyle({ color: markerColor, fillColor: markerColor });
                         mapMarkers[team].getPopup().setContent(`<b>${team}</b><br>${pData.line}<br>${pData.station}<br>（${pData.time} 更新）`);
                     } else {
-                        // 新しくピン（円形マーカー）を生成
                         const marker = L.circleMarker([pData.lat, pData.lng], {
                             radius: 10,
                             color: markerColor,
@@ -670,7 +663,6 @@
                             weight: 2
                         }).addTo(map);
                         
-                        // ピンをタップした時にチーム詳細が出るポップアップを結びつけ
                         marker.bindPopup(`<b>${team}</b><br>${pData.line}<br>${pData.station}<br>（${pData.time} 更新）`);
                         mapMarkers[team] = marker;
                     }
