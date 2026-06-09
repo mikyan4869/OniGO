@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>【完成版】鉄道ミッション＆タイマー</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #111; color: #fff;
+            text-align: center; padding: 20px; margin: 0;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh;
+            overscroll-behavior: none; 
+            -webkit-user-select: none; /* 誤操作での文字選択を防止 */
+            user-select: none;
+        }
+        h1 { font-size: 1.5rem; color: #ccc; margin-bottom: 10px; }
+        #timer {
+            font-size: 5rem; color: #ff3333; font-family: 'Courier New', Courier, monospace;
+            font-weight: bold; margin: 20px 0; text-shadow: 0 0 15px rgba(255, 0, 0, 0.7);
+        }
+        #mission-box {
+            background: #222; border: 3px solid #ffcc00; border-radius: 10px;
+            padding: 30px; margin: 20px auto; width: 90%; max-width: 400px; min-height: 120px;
+            display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(255, 204, 0, 0.3);
+        }
+        #mission-text { font-size: 1.4rem; font-weight: bold; line-height: 1.5; }
+        .btn-container { margin-top: 20px; display: flex; flex-direction: column; gap: 15px; align-items: center; }
+        
+        /* PC・スマホ双方で確実に動作するユニバーサルデザイン */
+        .game-btn {
+            background: #ffcc00; color: #111; border: none; padding: 15px 30px;
+            font-size: 1.2rem; border-radius: 50px; cursor: pointer; font-weight: bold; width: 250px;
+            display: inline-block; box-sizing: border-box;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+            transition: background 0.1s, transform 0.1s;
+        }
+        .game-btn:active { transform: scale(0.95); background: #ddaa00; }
+        #next-btn { background: #00ccff; color: #111; }
+        #next-btn:active { background: #0099cc; }
+        #reset-btn { background: #ff3333; color: white; margin-top: 30px; width: 200px; padding: 10px 20px; font-size: 1rem; }
+        #reset-btn:active { background: #cc2222; }
+        
+        #login-screen {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100;
+        }
+        input[type="number"] { 
+            padding: 12px; font-size: 1.3rem; border-radius: 5px; border: none; 
+            text-align: center; width: 200px; margin-bottom: 15px; background: #333; color: #fff;
+        }
+        .role-title { margin-bottom: 30px; color: #ffcc00; font-size: 1.8rem; }
+        .viewer-btn { background: #555; color: #fff; }
+        .viewer-btn:active { background: #444; }
+        #main-app { display: none; width: 100%; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen">
+        <h2 class="role-title">モード選択</h2>
+        <div id="btn-viewer" class="game-btn viewer-btn" onclick="selectRole('viewer')">閲覧者として参加</div>
+        
+        <div style="margin: 40px 0; width: 80%; border-top: 1px solid #444;"></div>
+        
+        <p style="margin-bottom: 8px; font-size: 1rem; color: #ccc;">代表者用パスワード</p>
+        <input type="number" id="password-input" placeholder="数字4桁" pattern="[0-9]*" inputmode="numeric">
+        <div id="btn-rep" class="game-btn" onclick="selectRole('representative')">代表者としてログイン</div>
+    </div>
+
+    <div id="main-app">
+        <h1>MISSION TIMER <span id="role-badge" style="font-size:1rem; color:#aaa;"></span></h1>
+        <div id="timer">60:00</div>
+        
+        <div id="mission-box">
+            <div id="mission-text">データベースに接続中...</div>
+        </div>
+
+        <div class="btn-container">
+            <div id="start-btn" class="game-btn" style="display:none;" onclick="clickStart()">ゲーム開始 (1時間)</div>
+            <div id="next-btn" class="game-btn" style="display:none;" onclick="clickNext()">次のミッションへ</div>
+            <div id="reset-btn" class="game-btn" style="display:none;" onclick="clickReset()">ゲームを初期化</div>
+        </div>
+    </div>
+
+    <script>
+        // 設定済みのFirebase情報
+        const firebaseConfig = {
+            apiKey: "AIzaSyAnI4_U_FU36MPImFlaN2RrrJQckOlypas",
+            authDomain: "otoro-onigo.firebaseapp.com",
+            databaseURL: "https://otoro-onigo-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "otoro-onigo",
+            storageBucket: "otoro-onigo.firebasestorage.app",
+            messagingSenderId: "150510279222",
+            appId: "1:150510279222:web:faee13dacfb2b7eaa8d697",
+            measurementId: "G-SLBPTR85GP"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const gameRef = db.ref('gameState');
+
+        const NORMAL_REP_PASSWORD = "1234";   // 一般代表者用
+        const MASTER_REP_PASSWORD = "8888";   // マスター代表者用
+        const GAME_DURATION_MS = 60 * 60 * 1000; // 60分
+
+        const allMissions = [
+            "環状線に半周乗れ", 
+            "末端区間に行け", 
+            "環状線外の六文字以上の駅に降りたて",
+            "今里ライナーを激写しろ", 
+            "ひらがなを含む駅名に降りたて", 
+            "梅田の5駅どれかに降りたて",
+            "逃走者チーム同士で落ち合え\n(連絡は禁止)"
+        ];
+
+        let userRole = 'viewer'; 
+        let localTimerInterval;
+
+        const loginScreen = document.getElementById('login-screen');
+        const mainApp = document.getElementById('main-app');
+        const timerDisplay = document.getElementById('timer');
+        const missionText = document.getElementById('mission-text');
+        const startBtn = document.getElementById('start-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const roleBadge = document.getElementById('role-badge');
+        const passwordInput = document.getElementById('password-input');
+
+        // ログイン処理
+        function selectRole(role) {
+            if (role === 'representative') {
+                const inputPass = passwordInput.value;
+                if (inputPass === MASTER_REP_PASSWORD) {
+                    userRole = 'master';
+                    roleBadge.textContent = "(マスター代表者)";
+                } else if (inputPass === NORMAL_REP_PASSWORD) {
+                    userRole = 'rep';
+                    roleBadge.textContent = "(代表者)";
+                } else {
+                    alert("パスワードが違います。");
+                    return;
+                }
+            } else {
+                userRole = 'viewer';
+                roleBadge.textContent = "(閲覧者)";
+            }
+            loginScreen.style.display = 'none';
+            mainApp.style.display = 'block';
+            listenToDatabase();
+        }
+
+        function listenToDatabase() {
+            gameRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                
+                startBtn.style.display = 'none';
+                nextBtn.style.display = 'none';
+                resetBtn.style.display = 'none';
+
+                if (!data) {
+                    timerDisplay.textContent = "60:00";
+                    missionText.innerHTML = (userRole === 'master' || userRole === 'rep') ? "ゲームを開始してください" : "代表者のゲーム開始を待っています...";
+                    
+                    if (userRole === 'master' || userRole === 'rep') startBtn.style.display = 'inline-block';
+                    if (userRole === 'master') resetBtn.style.display = 'inline-block';
+                    
+                    clearInterval(localTimerInterval);
+                    return;
+                }
+
+                if (data.mission) {
+                    missionText.innerHTML = data.mission.replace(/\n/g, '<br>');
+                    missionText.style.color = data.mission.includes("コンプリート") ? "#ffcc00" : "#ffffff";
+                }
+
+                if (data.endTime > 0) {
+                    if (userRole === 'master' || userRole === 'rep') nextBtn.style.display = 'inline-block';
+                    if (userRole === 'master') resetBtn.style.display = 'inline-block';
+                }
+
+                clearInterval(localTimerInterval);
+                localTimerInterval = setInterval(() => {
+                    const now = Date.now();
+                    const timeLeftMs = data.endTime - now;
+
+                    if (timeLeftMs <= 0) {
+                        clearInterval(localTimerInterval);
+                        timerDisplay.textContent = "60:00";
+                        missionText.innerHTML = "TIME UP!<br>制限時間終了。自動リセットされました。";
+                        missionText.style.color = "#ff3333";
+                        
+                        if (userRole === 'master' || userRole === 'rep') {
+                            gameRef.set(null); 
+                        }
+                    } else {
+                        const totalSeconds = Math.floor(timeLeftMs / 1000);
+                        const minutes = Math.floor(totalSeconds / 60);
+                        const seconds = totalSeconds % 60;
+                        timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    }
+                }, 100);
+            });
+        }
+
+        // 重複なしでミッションを選ぶ内部関数
+        function getRandomMission(current, usedList) {
+            const remainingMissions = allMissions.filter(m => !usedList.includes(m));
+            if (remainingMissions.length === 0) {
+                return "【全ミッションコンプリート！】\nこれ以降の指示は代表者から受けてください。";
+            }
+            return remainingMissions[Math.floor(Math.random() * remainingMissions.length)];
+        }
+
+        // --- 操作系の関数群 ---
+        function clickStart() {
+            const firstMission = allMissions[Math.floor(Math.random() * allMissions.length)];
+            const endTime = Date.now() + GAME_DURATION_MS;
+            gameRef.set({ 
+                mission: firstMission, 
+                endTime: endTime,
+                usedMissions: [firstMission]
+            });
+        }
+
+        function clickNext() {
+            gameRef.once('value').then((snapshot) => {
+                const data = snapshot.val();
+                if (!data) return;
+
+                let used = data.usedMissions ? data.usedMissions : [];
+                const newMission = getRandomMission(data.mission, used);
+                
+                if (!newMission.includes("コンプリート") && !used.includes(newMission)) {
+                    used.push(newMission);
+                }
+
+                gameRef.update({ 
+                    mission: newMission,
+                    usedMissions: used
+                });
+            });
+        }
+
+        function clickReset() {
+            if(confirm("強制的にゲームを初期化しますか？（タイマー・出題履歴もリセットされます）")) {
+                gameRef.set(null);
+            }
+        }
+    </script>
+</body>
+</html>
