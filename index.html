@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>【完成版】鉄道ミッション＆タイマー</title>
+    <title>【完成版】鉄道ミッション＆位置共有</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
@@ -11,78 +11,165 @@
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
             background-color: #111; color: #fff;
-            text-align: center; padding: 20px; margin: 0;
-            display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh;
+            text-align: center; padding: 0; margin: 0;
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-height: 100vh;
             overscroll-behavior: none; 
-            -webkit-user-select: none; /* 誤操作での文字選択を防止 */
             user-select: none;
         }
-        h1 { font-size: 1.5rem; color: #ccc; margin-bottom: 10px; }
-        #timer {
-            font-size: 5rem; color: #ff3333; font-family: 'Courier New', Courier, monospace;
-            font-weight: bold; margin: 20px 0; text-shadow: 0 0 15px rgba(255, 0, 0, 0.7);
-        }
-        #mission-box {
-            background: #222; border: 3px solid #ffcc00; border-radius: 10px;
-            padding: 30px; margin: 20px auto; width: 90%; max-width: 400px; min-height: 120px;
-            display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(255, 204, 0, 0.3);
-        }
-        #mission-text { font-size: 1.4rem; font-weight: bold; line-height: 1.5; }
-        .btn-container { margin-top: 20px; display: flex; flex-direction: column; gap: 15px; align-items: center; }
+        h1 { font-size: 1.3rem; color: #ccc; margin: 15px 0 5px 0; }
         
-        /* PC・スマホ双方で確実に動作するユニバーサルデザイン */
+        /* タブメニューのスタイル */
+        #tab-container {
+            display: none; width: 100%; max-width: 500px;
+            background: #222; border-bottom: 2px solid #444;
+        }
+        .tab-button {
+            width: 50%; padding: 15px 0; float: left;
+            background: #222; color: #888; font-weight: bold; font-size: 1.1rem;
+            cursor: pointer; text-align: center; border: none; outline: none;
+        }
+        .tab-button.active {
+            background: #333; color: #ffcc00; border-bottom: 3px solid #ffcc00;
+        }
+        .tab-content { display: none; width: 100%; max-width: 500px; padding: 20px; box-sizing: border-box; }
+        .tab-content.active { display: block; }
+
+        /* タイマー・ミッションのスタイル */
+        #timer {
+            font-size: 4.5rem; color: #ff3333; font-family: 'Courier New', Courier, monospace;
+            font-weight: bold; margin: 10px 0; text-shadow: 0 0 15px rgba(255, 0, 0, 0.7);
+        }
+        .box-title { color: #ffcc00; font-weight: bold; margin-bottom: 5px; text-align: left; font-size: 0.9rem;}
+        #mission-box, #status-box {
+            background: #222; border: 2px solid #ffcc00; border-radius: 10px;
+            padding: 20px; margin: 10px auto 20px auto; width: 100%; box-sizing: border-box;
+            min-height: 100px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            box-shadow: 0 0 15px rgba(255, 204, 0, 0.2);
+        }
+        #mission-text { font-size: 1.3rem; font-weight: bold; line-height: 1.5; }
+        .btn-container { margin-top: 15px; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+        
+        /* 共通ボタンスタイル */
         .game-btn {
-            background: #ffcc00; color: #111; border: none; padding: 15px 30px;
-            font-size: 1.2rem; border-radius: 50px; cursor: pointer; font-weight: bold; width: 250px;
-            display: inline-block; box-sizing: border-box;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.4);
-            transition: background 0.1s, transform 0.1s;
+            background: #ffcc00; color: #111; border: none; padding: 12px 25px;
+            font-size: 1.1rem; border-radius: 50px; cursor: pointer; font-weight: bold; width: 240px;
+            display: inline-block; box-sizing: border-box; box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+            transition: background 0.1s, transform 0.1s; text-align: center;
         }
         .game-btn:active { transform: scale(0.95); background: #ddaa00; }
-        #next-btn { background: #00ccff; color: #111; }
+        #next-btn { background: #00ccff; }
         #next-btn:active { background: #0099cc; }
-        #reset-btn { background: #ff3333; color: white; margin-top: 30px; width: 200px; padding: 10px 20px; font-size: 1rem; }
-        #reset-btn:active { background: #cc2222; }
+        #reset-btn { background: #ff3333; color: white; margin-top: 20px; width: 180px; padding: 8px 15px; font-size: 0.9rem; }
         
+        /* ログイン画面のスタイル */
         #login-screen {
             position: absolute; top: 0; left: 0; right: 0; bottom: 0;
             background-color: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100;
         }
-        input[type="number"] { 
-            padding: 12px; font-size: 1.3rem; border-radius: 5px; border: none; 
-            text-align: center; width: 200px; margin-bottom: 15px; background: #333; color: #fff;
+        input, select { 
+            padding: 12px; font-size: 1.1rem; border-radius: 5px; border: none; 
+            text-align: center; width: 220px; margin-bottom: 15px; background: #333; color: #fff;
         }
-        .role-title { margin-bottom: 30px; color: #ffcc00; font-size: 1.8rem; }
+        .role-title { margin-bottom: 25px; color: #ffcc00; font-size: 1.8rem; }
         .viewer-btn { background: #555; color: #fff; }
-        .viewer-btn:active { background: #444; }
         #main-app { display: none; width: 100%; }
+
+        /* 位置情報申告用のスタイル */
+        .select-label { font-size: 1rem; color: #ccc; margin: 10px 0 5px 0; font-weight: bold; }
+        #send-location-btn { background: #00ff66; color: #111; margin-top: 10px; }
+        #send-location-btn:active { background: #00cc55; }
+        
+        /* 位置一覧リストのスタイル */
+        .member-location-item {
+            width: 100%; padding: 10px; border-bottom: 1px solid #333;
+            display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem;
+        }
+        .member-name { font-weight: bold; color: #00ccff; }
+        .member-loc { color: #fff; background: #333; padding: 4px 10px; border-radius: 5px; font-size: 0.95rem; }
+        .member-time { font-size: 0.75rem; color: #888; }
     </style>
 </head>
 <body>
 
     <div id="login-screen">
-        <h2 class="role-title">モード選択</h2>
-        <div id="btn-viewer" class="game-btn viewer-btn" onclick="selectRole('viewer')">閲覧者として参加</div>
+        <h2 class="role-title">参戦ログイン</h2>
         
-        <div style="margin: 40px 0; width: 80%; border-top: 1px solid #444;"></div>
+        <p style="margin-bottom: 8px; font-size: 1rem; color: #ccc;">自分のチームを選択</p>
+        <select id="team-select">
+            <option value="チームA">チームA</option>
+            <option value="チームB">チームB</option>
+            <option value="チームC">チームC</option>
+        </select>
         
-        <p style="margin-bottom: 8px; font-size: 1rem; color: #ccc;">代表者用パスワード</p>
+        <div style="margin: 15px 0; width: 80%; border-top: 1px solid #333;"></div>
+        <div class="game-btn viewer-btn" onclick="selectRole('viewer')">閲覧者(逃走者など)として参加</div>
+        
+        <div style="margin: 25px 0; width: 80%; border-top: 1px solid #444;"></div>
+        <p style="margin-bottom: 8px; font-size: 0.9rem; color: #aaa;">代表者用パスワード</p>
         <input type="number" id="password-input" placeholder="数字4桁" pattern="[0-9]*" inputmode="numeric">
-        <div id="btn-rep" class="game-btn" onclick="selectRole('representative')">代表者としてログイン</div>
+        <div class="game-btn" onclick="selectRole('representative')">代表者としてログイン</div>
     </div>
 
     <div id="main-app">
-        <h1>MISSION TIMER <span id="role-badge" style="font-size:1rem; color:#aaa;"></span></h1>
-        <div id="timer">60:00</div>
-        
-        <div id="mission-box">
-            <div id="mission-text">データベースに接続中...</div>
+        <div id="tab-container">
+            <div id="tab1-button" class="tab-button active" onclick="switchTab(1)">ミッション</div>
+            <div id="tab2-button" class="tab-button" onclick="switchTab(2)">位置共有</div>
         </div>
 
-        <div class="btn-container">
-            <div id="start-btn" class="game-btn" style="display:none;" onclick="clickStart()">ゲーム開始 (1時間)</div>
-            <div id="next-btn" class="game-btn" style="display:none;" onclick="clickNext()">次のミッションへ</div>
-            <div id="reset-btn" class="game-btn" style="display:none;" onclick="clickReset()">ゲームを初期化</div>
+        <div id="tab1-content" class="tab-content active">
+            <h1>MISSION TIMER <span id="role-badge" style="font-size:0.8rem; color:#aaa;"></span></h1>
+            <div id="timer">60:00</div>
+            
+            <div id="mission-box">
+                <div id="mission-text">データベースに接続中...</div>
+            </div>
+
+            <div class="btn-container">
+                <div id="start-btn" class="game-btn" style="display:none;" onclick="clickStart()">ゲーム開始 (1時間)</div>
+                <div id="next-btn" class="game-btn" style="display:none;" onclick="clickNext()">次のミッションへ</div>
+                <div id="reset-btn" class="game-btn" style="display:none;" onclick="clickReset()">ゲームを初期化</div>
+            </div>
+        </div>
+
+        <div id="tab2-content" class="tab-content">
+            <h1>現在地の共有</h1>
+            
+            <div id="rep-location-area" style="display: none; background: #222; padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #444;">
+                <div style="color:#ffcc00; font-weight:bold; margin-bottom:10px;">【代表者専用】現在地の申告</div>
+                <div class="select-label">現在乗っている路線</div>
+                <select id="line-select" style="width:85%;">
+                    <option value="大阪環状線">大阪環状線</option>
+                    <option value="御堂筋線">御堂筋線</option>
+                    <option value="谷町線">谷町線</option>
+                    <option value="四つ橋線">四つ橋線</option>
+                    <option value="中央線">中央線</option>
+                    <option value="千日前線">千日前線</option>
+                    <option value="堺筋線">堺筋線</option>
+                    <option value="長堀鶴見緑地線">長堀鶴見緑地線</option>
+                    <option value="今里筋線">今里筋線</option>
+                    <option value="今里ライナー">今里ライナー(BRT)</option>
+                    <option value="JR線(環状線以外)">JR線(環状線以外)</option>
+                    <option value="その他/徒歩">その他 / 徒歩 / 駅構内</option>
+                </select>
+
+                <div class="select-label">現在の区間・駅名など（自由入力）</div>
+                <input type="text" id="station-input" placeholder="例: 梅田〜本町、天王寺駅" maxlength="20" style="margin-bottom:10px; width:85%;">
+                
+                <div class="btn-container">
+                    <div id="send-location-btn" class="game-btn" onclick="submitLocation()">現在地を申告・更新</div>
+                </div>
+            </div>
+
+            <div id="viewer-location-message" style="display: none; color: #888; margin-bottom: 15px; font-size: 0.9rem;">
+                ※位置情報の申告は各チームの代表者のみ可能です。
+            </div>
+
+            <div class="box-title">▼ 各チームの現在地一覧</div>
+            <div id="status-box" style="justify-content: flex-start; min-height: 200px; padding: 10px;">
+                <div id="location-list" style="width:100%;">
+                    <div style="color:#888; padding:20px;">位置データがありません</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -102,22 +189,20 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
         const gameRef = db.ref('gameState');
+        const locRef = db.ref('locations'); 
 
-        const NORMAL_REP_PASSWORD = "1234";   // 一般代表者用
-        const MASTER_REP_PASSWORD = "8888";   // マスター代表者用
-        const GAME_DURATION_MS = 60 * 60 * 1000; // 60分
+        const NORMAL_REP_PASSWORD = "1234";   
+        const MASTER_REP_PASSWORD = "8888";   
+        const GAME_DURATION_MS = 60 * 60 * 1000; 
 
         const allMissions = [
-            "環状線に半周乗れ", 
-            "末端区間に行け", 
-            "環状線外の六文字以上の駅に降りたて",
-            "今里ライナーを激写しろ", 
-            "ひらがなを含む駅名に降りたて", 
-            "梅田の5駅どれかに降りたて",
+            "環状線に半周乗れ", "末端区間に行け", "環状線外の六文字以上の駅に降りたて",
+            "今里ライナーを激写しろ", "ひらがなを含む駅名に降りたて", "梅田の5駅どれかに降りたて",
             "逃走者チーム同士で落ち合え\n(連絡は禁止)"
         ];
 
         let userRole = 'viewer'; 
+        let myTeam = ''; // チームA, B, Cが格納される
         let localTimerInterval;
 
         const loginScreen = document.getElementById('login-screen');
@@ -129,30 +214,55 @@
         const resetBtn = document.getElementById('reset-btn');
         const roleBadge = document.getElementById('role-badge');
         const passwordInput = document.getElementById('password-input');
+        const teamSelect = document.getElementById('team-select');
+
+        // タブ切り替えシステム
+        function switchTab(tabNum) {
+            document.getElementById('tab1-button').classList.remove('active');
+            document.getElementById('tab2-button').classList.remove('active');
+            document.getElementById('tab1-content').classList.remove('active');
+            document.getElementById('tab2-content').classList.remove('active');
+            
+            if(tabNum === 1) {
+                document.getElementById('tab1-button').classList.add('active');
+                document.getElementById('tab1-content').classList.add('active');
+            } else {
+                document.getElementById('tab2-button').classList.add('active');
+                document.getElementById('tab2-content').classList.add('active');
+            }
+        }
 
         // ログイン処理
         function selectRole(role) {
+            myTeam = teamSelect.value; // 選択された「チームA」などの文字列を取得
+
             if (role === 'representative') {
                 const inputPass = passwordInput.value;
                 if (inputPass === MASTER_REP_PASSWORD) {
                     userRole = 'master';
-                    roleBadge.textContent = "(マスター代表者)";
+                    roleBadge.textContent = "：マスター代表者(" + myTeam + ")";
+                    document.getElementById('rep-location-area').style.display = 'block'; // ★申告エリアを表示
                 } else if (inputPass === NORMAL_REP_PASSWORD) {
                     userRole = 'rep';
-                    roleBadge.textContent = "(代表者)";
+                    roleBadge.textContent = "：代表者(" + myTeam + ")";
+                    document.getElementById('rep-location-area').style.display = 'block'; // ★申告エリアを表示
                 } else {
                     alert("パスワードが違います。");
                     return;
                 }
             } else {
                 userRole = 'viewer';
-                roleBadge.textContent = "(閲覧者)";
+                roleBadge.textContent = "：閲覧者(" + myTeam + "所属)";
+                document.getElementById('viewer-location-message').style.display = 'block'; // ★案内メッセージを表示
             }
             loginScreen.style.display = 'none';
             mainApp.style.display = 'block';
+            document.getElementById('tab-container').style.display = 'block'; 
             listenToDatabase();
+            listenToLocations(); 
         }
 
+        // ミッション＆タイマーのリアルタイム同期
         function listenToDatabase() {
             gameRef.on('value', (snapshot) => {
                 const data = snapshot.val();
@@ -206,6 +316,61 @@
             });
         }
 
+        // 位置情報の自己申告処理（★自分のチーム名固定で送信）
+        function submitLocation() {
+            const line = document.getElementById('line-select').value;
+            const station = document.getElementById('station-input').value.trim();
+            
+            if(!station) {
+                alert("現在の区間や駅名を入力してください。");
+                return;
+            }
+
+            const now = new Date();
+            const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+
+            // ログイン時に選んだ「チームA」などの名前の部屋に現在地を上書き保存
+            locRef.child(myTeam).set({
+                line: line,
+                station: station,
+                time: timeStr
+            }).then(() => {
+                alert(myTeam + "の現在地を更新しました！");
+                document.getElementById('station-input').value = ''; // 入力欄をクリア
+            });
+        }
+
+        function listenToLocations() {
+            locRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                const listContainer = document.getElementById('location-list');
+                listContainer.innerHTML = '';
+
+                if (!data) {
+                    listContainer.innerHTML = '<div style="color:#888; padding:20px;">まだ位置の申告がありません</div>';
+                    return;
+                }
+
+                // 登録されているチームの位置情報をループして画面に生成
+                for (let team in data) {
+                    const pData = data[team];
+                    const item = document.createElement('div');
+                    item.className = 'member-location-item';
+                    item.innerHTML = `
+                        <div>
+                            <span class="member-name">${team}</span>
+                            <span class="member-time">（${pData.time} 更新）</span>
+                        </div>
+                        <div class="member-loc">
+                            <span style="color:#ffcc00; font-size:0.8rem; display:block; text-align:right;">${pData.line}</span>
+                            <span>${pData.station}</span>
+                        </div>
+                    `;
+                    listContainer.appendChild(item);
+                }
+            });
+        }
+
         // 重複なしでミッションを選ぶ内部関数
         function getRandomMission(current, usedList) {
             const remainingMissions = allMissions.filter(m => !usedList.includes(m));
@@ -246,8 +411,9 @@
         }
 
         function clickReset() {
-            if(confirm("強制的にゲームを初期化しますか？（タイマー・出題履歴もリセットされます）")) {
+            if(confirm("強制的にゲームを初期化しますか？（タイマー・出題履歴・全チームの位置もリセットされます）")) {
                 gameRef.set(null);
+                locRef.set(null); 
             }
         }
     </script>
