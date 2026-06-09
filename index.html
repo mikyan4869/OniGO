@@ -7,6 +7,9 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
     <style>
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
@@ -18,13 +21,13 @@
         }
         h1 { font-size: 1.3rem; color: #ccc; margin: 15px 0 5px 0; }
         
-        /* タブメニューのスタイル */
+        /* タブメニューのスタイル（3タブ均等幅に変更） */
         #tab-container {
             display: none; width: 100%; max-width: 500px;
             background: #222; border-bottom: 2px solid #444;
         }
         .tab-button {
-            width: 50%; padding: 15px 0; float: left;
+            width: 33.33%; padding: 15px 0; float: left;
             background: #222; color: #888; font-weight: bold; font-size: 1.1rem;
             cursor: pointer; text-align: center; border: none; outline: none;
         }
@@ -79,6 +82,14 @@
         #send-location-btn { background: #00ff66; color: #111; margin-top: 10px; }
         #send-location-btn:active { background: #00cc55; }
         
+        /* 注意事項ボックスのスタイル */
+        #rules-box {
+            background: #2b2b2b; border: 1px solid #555; border-radius: 8px;
+            padding: 15px; margin-bottom: 20px; text-align: left; font-size: 0.9rem; line-height: 1.5;
+        }
+        .rule-item { margin-bottom: 6px; display: flex; align-items: flex-start; }
+        .rule-tag { background: #ff5555; color: #fff; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-right: 8px; font-weight: bold; flex-shrink: 0; }
+        
         /* 位置一覧リストのスタイル */
         .member-location-item {
             width: 100%; padding: 10px; border-bottom: 1px solid #333;
@@ -86,10 +97,25 @@
         }
         .member-name { font-weight: bold; color: #00ccff; }
         .member-loc { color: #fff; background: #333; padding: 4px 10px; border-radius: 5px; font-size: 0.95rem; }
-        .member-time { font-size: 0.75rem; color: #888; }
+        
+        /* 🌐 マップ表示エリアのスタイル */
+        #map {
+            width: 100%; height: 65vh; max-height: 600px;
+            border: 2px solid #444; border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+        }
     </style>
 </head>
 <body>
+
+    <div id="notification-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:999; justify-content:center; align-items:center;">
+        <div style="background:#111; border:3px solid #ff3333; border-radius:15px; padding:30px; width:80%; max-width:350px; text-align:center; box-shadow:0 0 30px rgba(255, 51, 51, 0.5);">
+            <h2 style="color:#ff3333; margin-top:0; font-size:1.8rem;">🚨 開示時間 🚨</h2>
+            <p id="notification-text" style="font-size:1.2rem; font-weight:bold; line-height:1.6; color:#fff;"></p>
+            <div id="close-notification-btn" class="game-btn" onclick="closeNotification()" style="width:100%; margin-top:20px; background:#ffcc00; color:#111;">確認して閉じる</div>
+            <div id="go-to-tab2-btn" class="game-btn" onclick="clickGoToTab2()" style="width:100%; margin-top:20px; background:#00ff66; color:#111; display:none;">位置共有を開く</div>
+        </div>
+    </div>
 
     <div id="login-screen">
         <h2 class="role-title">参戦ログイン</h2>
@@ -114,6 +140,11 @@
         <div id="tab-container">
             <div id="tab1-button" class="tab-button active" onclick="switchTab(1)">ミッション</div>
             <div id="tab2-button" class="tab-button" onclick="switchTab(2)">位置共有</div>
+            <div id="tab3-button" class="tab-button" onclick="switchTab(3)">マップ</div>
+        </div>
+
+        <div id="oni-display-bar" style="width: 100%; max-width: 500px; background: #331111; border-bottom: 1px solid #ff3333; padding: 10px 0; font-weight: bold; color: #ff5555; font-size: 1.1rem; display: none; box-sizing: border-box;">
+            現在の鬼：<span id="current-oni-text" style="color: #fff; background: #ff3333; padding: 2px 8px; border-radius: 4px;">未設定</span>
         </div>
 
         <div id="tab1-content" class="tab-content active">
@@ -126,7 +157,7 @@
 
             <div class="btn-container">
                 <div id="start-btn" class="game-btn" style="display:none;" onclick="clickStart()">ゲーム開始 (1時間)</div>
-                <div id="next-btn" class="game-btn" style="display:none;" onclick="clickNext()">次のミッションへ</div>
+                <div id="next-btn" class="game-btn" style="display:none;" onclick="clickNext()">ミッション完了</div>
                 <div id="reset-btn" class="game-btn" style="display:none;" onclick="clickReset()">ゲームを初期化</div>
             </div>
         </div>
@@ -134,9 +165,42 @@
         <div id="tab2-content" class="tab-content">
             <h1>現在地の共有</h1>
             
+            <div id="master-oni-area" style="display: none; background: #331111; padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 2px solid #ff3333;">
+                <div style="color:#ff5555; font-weight:bold; margin-bottom:10px;">【マスター専用】現在の鬼を指名</div>
+                <select id="oni-select" style="width:85%; margin-bottom: 10px;">
+                    <option value="チームA">チームA</option>
+                    <option value="チームB">チームB</option>
+                    <option value="チームC">チームC</option>
+                </select>
+                <div class="btn-container" style="margin-top:5px;">
+                    <div class="game-btn" onclick="submitOni()" style="background:#ff3333; color:#fff; width:200px;">鬼を確定・更新</div>
+                </div>
+            </div>
+            
+            <div id="rules-box">
+                <div style="color:#ffcc00; font-weight:bold; margin-bottom:10px; text-align:center; font-size:0.95rem;">⚠️ 位置開示の書き方ルール ⚠️</div>
+                <div class="rule-item">
+                    <span class="rule-tag" style="background:#ff8c00;">走行中</span>
+                    <span>路線を選択 ➡️ 入力欄に<b>現在の区間</b>を書く</span>
+                </div>
+                <div class="rule-item">
+                    <span class="rule-tag" style="background:#1e90ff;">停車中</span>
+                    <span>路線を選択 ➡️ 入力欄に<b>現在の駅名</b>を書く</span>
+                </div>
+                <div class="rule-item">
+                    <span class="rule-tag" style="background:#32cd32;">駅構内</span>
+                    <span>「駅構内」を選択 ➡️ 入力欄に<b>現在の駅名</b>を書く</span>
+                </div>
+                <div class="rule-item">
+                    <span class="rule-tag" style="background:#9370db;">駅の外</span>
+                    <span>「徒歩(駅外)」を選択 ➡️ 入力欄に<b>一番近い駅名</b>を書く</span>
+                </div>
+            </div>
+            
             <div id="rep-location-area" style="display: none; background: #222; padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #444;">
                 <div style="color:#ffcc00; font-weight:bold; margin-bottom:10px;">【代表者専用】現在地の申告</div>
-                <div class="select-label">現在乗っている路線</div>
+                <div class="select-label">現在乗っている路線・状態</div>
+                
                 <select id="line-select" style="width:85%;">
                     <option value="大阪環状線">大阪環状線</option>
                     <option value="御堂筋線">御堂筋線</option>
@@ -147,13 +211,16 @@
                     <option value="堺筋線">堺筋線</option>
                     <option value="長堀鶴見緑地線">長堀鶴見緑地線</option>
                     <option value="今里筋線">今里筋線</option>
-                    <option value="今里ライナー">今里ライナー(BRT)</option>
-                    <option value="JR線(環状線以外)">JR線(環状線以外)</option>
-                    <option value="その他/徒歩">その他 / 徒歩 / 駅構内</option>
+                    <option value="東海道本線">東海道本線</option>
+                    <option value="ゆめ咲線">ゆめ咲線</option>
+                    <option value="大和路線">大和路線</option>
+                    <option value="JR東西線">JR東西線</option>
+                    <option value="駅構内">駅構内</option>
+                    <option value="徒歩(駅外)">徒歩(駅外)</option>
                 </select>
 
-                <div class="select-label">現在の区間・駅名など（自由入力）</div>
-                <input type="text" id="station-input" placeholder="例: 梅田〜本町、天王寺駅" maxlength="20" style="margin-bottom:10px; width:85%;">
+                <div class="select-label">現在の区間・駅名など</div>
+                <input type="text" id="station-input" placeholder="例: 梅田ー淀屋橋、天王寺駅" maxlength="20" style="margin-bottom:10px; width:85%;">
                 
                 <div class="btn-container">
                     <div id="send-location-btn" class="game-btn" onclick="submitLocation()">現在地を申告・更新</div>
@@ -170,6 +237,12 @@
                     <div style="color:#888; padding:20px;">位置データがありません</div>
                 </div>
             </div>
+        </div>
+
+        <div id="tab3-content" class="tab-content">
+            <h1>リアルタイムマップ</h1>
+            <p style="font-size: 0.8rem; color: #aaa; margin-top: -5px; margin-bottom: 10px;">※GPSを取得できたチームのみピンが表示されます（鬼は赤、逃走者は青）</p>
+            <div id="map"></div>
         </div>
     </div>
 
@@ -195,6 +268,18 @@
         const MASTER_REP_PASSWORD = "8888";   
         const GAME_DURATION_MS = 60 * 60 * 1000; 
 
+        // タイマー・通知処理用
+        let lastNotifiedMinute = -1;
+        let currentSessionId = 0;
+        
+        // 位置情報の未更新チェック用
+        let myLastUpdateTimestamp = 0;
+        let currentTab = 1; 
+
+        // 🌐 マップ制御用の変数
+        let map;
+        let mapMarkers = {};
+
         const allMissions = [
             "環状線に半周乗れ", "末端区間に行け", "環状線外の六文字以上の駅に降りたて",
             "今里ライナーを激写しろ", "ひらがなを含む駅名に降りたて", "梅田の5駅どれかに降りたて",
@@ -202,7 +287,7 @@
         ];
 
         let userRole = 'viewer'; 
-        let myTeam = ''; // チームA, B, Cが格納される
+        let myTeam = ''; 
         let localTimerInterval;
 
         const loginScreen = document.getElementById('login-screen');
@@ -216,36 +301,80 @@
         const passwordInput = document.getElementById('password-input');
         const teamSelect = document.getElementById('team-select');
 
-        // タブ切り替えシステム
+        function closeNotification() {
+            document.getElementById('notification-modal').style.display = 'none';
+        }
+
+        function showNotification(msg) {
+            document.getElementById('notification-text').innerText = msg;
+            document.getElementById('notification-modal').style.display = 'flex';
+        }
+
         function switchTab(tabNum) {
+            currentTab = tabNum;
             document.getElementById('tab1-button').classList.remove('active');
             document.getElementById('tab2-button').classList.remove('active');
+            document.getElementById('tab3-button').classList.remove('active');
             document.getElementById('tab1-content').classList.remove('active');
             document.getElementById('tab2-content').classList.remove('active');
+            document.getElementById('tab3-content').classList.remove('active');
             
             if(tabNum === 1) {
                 document.getElementById('tab1-button').classList.add('active');
                 document.getElementById('tab1-content').classList.add('active');
-            } else {
+            } else if(tabNum === 2) {
                 document.getElementById('tab2-button').classList.add('active');
                 document.getElementById('tab2-content').classList.add('active');
+            } else if(tabNum === 3) {
+                document.getElementById('tab3-button').classList.add('active');
+                document.getElementById('tab3-content').classList.add('active');
+                // 🌐 タブを開いた時にマップを初期化＆リサイズ計算
+                initMapIfNeeded();
             }
         }
 
-        // ログイン処理
+        // 🌐 マップの初期化システム
+        function initMapIfNeeded() {
+            if (!map) {
+                // 大阪駅周辺を中心に初期マップを生成
+                map = L.map('map').setView([34.7024, 135.4959], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+                
+                // すでに読み込まれている位置データがあればプロット
+                gameRef.once('value').then((snapshot) => {
+                    const data = snapshot.val();
+                    const currentOni = data ? data.currentOni : "未設定";
+                    locRef.once('value').then((locSnapshot) => {
+                        updateMapMarkers(locSnapshot.val(), currentOni);
+                    });
+                });
+            } else {
+                // 隠れていたマップが表示された時の枠崩れ防止処理
+                setTimeout(() => { map.invalidateSize(); }, 100);
+            }
+        }
+
+        function clickGoToTab2() {
+            closeNotification();
+            switchTab(2);
+        }
+
         function selectRole(role) {
-            myTeam = teamSelect.value; // 選択された「チームA」などの文字列を取得
+            myTeam = teamSelect.value; 
 
             if (role === 'representative') {
                 const inputPass = passwordInput.value;
                 if (inputPass === MASTER_REP_PASSWORD) {
                     userRole = 'master';
                     roleBadge.textContent = "：マスター代表者(" + myTeam + ")";
-                    document.getElementById('rep-location-area').style.display = 'block'; // ★申告エリアを表示
+                    document.getElementById('rep-location-area').style.display = 'block';
+                    document.getElementById('master-oni-area').style.display = 'block'; 
                 } else if (inputPass === NORMAL_REP_PASSWORD) {
                     userRole = 'rep';
                     roleBadge.textContent = "：代表者(" + myTeam + ")";
-                    document.getElementById('rep-location-area').style.display = 'block'; // ★申告エリアを表示
+                    document.getElementById('rep-location-area').style.display = 'block';
                 } else {
                     alert("パスワードが違います。");
                     return;
@@ -253,16 +382,16 @@
             } else {
                 userRole = 'viewer';
                 roleBadge.textContent = "：閲覧者(" + myTeam + "所属)";
-                document.getElementById('viewer-location-message').style.display = 'block'; // ★案内メッセージを表示
+                document.getElementById('viewer-location-message').style.display = 'block'; 
             }
             loginScreen.style.display = 'none';
             mainApp.style.display = 'block';
             document.getElementById('tab-container').style.display = 'block'; 
+            document.getElementById('oni-display-bar').style.display = 'block'; 
             listenToDatabase();
             listenToLocations(); 
         }
 
-        // ミッション＆タイマーのリアルタイム同期
         function listenToDatabase() {
             gameRef.on('value', (snapshot) => {
                 const data = snapshot.val();
@@ -271,14 +400,16 @@
                 nextBtn.style.display = 'none';
                 resetBtn.style.display = 'none';
 
-                if (!data) {
+                if (!data || !data.endTime) {
                     timerDisplay.textContent = "60:00";
+                    document.getElementById('current-oni-text').textContent = (data && data.currentOni) ? data.currentOni : "未設定";
                     missionText.innerHTML = (userRole === 'master' || userRole === 'rep') ? "ゲームを開始してください" : "代表者のゲーム開始を待っています...";
                     
                     if (userRole === 'master' || userRole === 'rep') startBtn.style.display = 'inline-block';
                     if (userRole === 'master') resetBtn.style.display = 'inline-block';
                     
                     clearInterval(localTimerInterval);
+                    closeNotification(); 
                     return;
                 }
 
@@ -287,24 +418,99 @@
                     missionText.style.color = data.mission.includes("コンプリート") ? "#ffcc00" : "#ffffff";
                 }
 
+                const oniName = data.currentOni || "未設定";
+                document.getElementById('current-oni-text').textContent = oniName;
+
+                // 鬼の文字色更新
+                document.querySelectorAll('.member-location-item').forEach(item => {
+                    const nameEl = item.querySelector('.member-name');
+                    const locEl = item.querySelector('.member-loc');
+                    if (nameEl && locEl) {
+                        const currentName = nameEl.textContent.trim();
+                        if (currentName === oniName) {
+                            nameEl.style.color = '#ff3333';
+                            locEl.style.color = '#ff9999';
+                        } else {
+                            nameEl.style.color = '#00ccff';
+                            locEl.style.color = '#ffffff';
+                        }
+                    }
+                });
+
                 if (data.endTime > 0) {
                     if (userRole === 'master' || userRole === 'rep') nextBtn.style.display = 'inline-block';
                     if (userRole === 'master') resetBtn.style.display = 'inline-block';
                 }
 
+                if (data.endTime !== currentSessionId) {
+                    currentSessionId = data.endTime;
+                }
+
                 clearInterval(localTimerInterval);
+                
                 localTimerInterval = setInterval(() => {
                     const now = Date.now();
                     const timeLeftMs = data.endTime - now;
 
+                    const currentClock = new Date();
+                    const clockMin = currentClock.getMinutes();
+                    const clockSec = currentClock.getSeconds();
+
+                    const currentOni = document.getElementById('current-oni-text').textContent;
+                    const isOni = (myTeam === currentOni);
+
+                    let deadlineMinute = 0;
+                    if (isOni) {
+                        if (clockMin >= 30) deadlineMinute = 30;
+                        else deadlineMinute = 0;
+                    } else {
+                        if (clockMin >= 45) deadlineMinute = 45;
+                        else if (clockMin >= 30) deadlineMinute = 30;
+                        else if (clockMin >= 15) deadlineMinute = 15;
+                        else deadlineMinute = 0;
+                    }
+
+                    const deadlineDate = new Date(currentClock.getTime());
+                    deadlineDate.setMinutes(deadlineMinute);
+                    deadlineDate.setSeconds(0);
+                    deadlineDate.setMilliseconds(0);
+                    const deadlineTimestamp = deadlineDate.getTime();
+
+                    if (myLastUpdateTimestamp < deadlineTimestamp) {
+                        if (currentTab === 1) {
+                            document.getElementById('close-notification-btn').style.display = 'none';
+                            document.getElementById('go-to-tab2-btn').style.display = 'inline-block';
+                            
+                            const displayMin = deadlineMinute === 0 ? "00" : deadlineMinute;
+                            let msg = "";
+                            if (isOni) {
+                                msg = `【 鬼チーム 開示時間 】\n\n${displayMin}分の位置情報が未更新です！\n現在地を報告するまでミッション画面はロックされます。`;
+                            } else {
+                                msg = `【 逃走者チーム 開示時間 】\n\n${displayMin}分の位置情報が未更新です！\n現在地を報告するまでミッション画面はロックされます。`;
+                            }
+                            
+                            if (document.getElementById('notification-modal').style.display !== 'flex' || document.getElementById('notification-text').innerText !== msg) {
+                                showNotification(msg);
+                            }
+                        } else {
+                            if (document.getElementById('notification-modal').style.display === 'flex' && document.getElementById('notification-text').innerText.includes("未更新です")) {
+                                closeNotification();
+                            }
+                        }
+                    } else {
+                        if (document.getElementById('notification-modal').style.display === 'flex' && document.getElementById('notification-text').innerText.includes("未更新です")) {
+                            closeNotification();
+                        }
+                    }
+
                     if (timeLeftMs <= 0) {
                         clearInterval(localTimerInterval);
-                        timerDisplay.textContent = "60:00";
+                        timerDisplay.textContent = "00:00";
                         missionText.innerHTML = "TIME UP!<br>制限時間終了。自動リセットされました。";
                         missionText.style.color = "#ff3333";
                         
                         if (userRole === 'master' || userRole === 'rep') {
-                            gameRef.set(null); 
+                            gameRef.update({ mission: null, endTime: null, usedMissions: null }); 
                         }
                     } else {
                         const totalSeconds = Math.floor(timeLeftMs / 1000);
@@ -312,31 +518,70 @@
                         const seconds = totalSeconds % 60;
                         timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
                     }
-                }, 100);
+                }, 200); 
             });
         }
 
-        // 位置情報の自己申告処理（★自分のチーム名固定で送信）
+        // 🌐 位置情報の自己申告（GPS取得ロジックの統合）
         function submitLocation() {
             const line = document.getElementById('line-select').value;
             const station = document.getElementById('station-input').value.trim();
             
             if(!station) {
-                alert("現在の区間や駅名を入力してください。");
+                alert("位置情報を入力してください。");
                 return;
             }
+
+            const sendBtn = document.getElementById('send-location-btn');
+            sendBtn.innerText = "GPS位置情報を取得中...(最大5秒)";
+            sendBtn.style.pointerEvents = "none";
+            sendBtn.style.background = "#555";
 
             const now = new Date();
             const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
 
-            // ログイン時に選んだ「チームA」などの名前の部屋に現在地を上書き保存
-            locRef.child(myTeam).set({
+            // スマホのブラウザからGPSを取得
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        // 取得成功時
+                        saveLocationToFirebase(line, station, timeStr, position.coords.latitude, position.coords.longitude);
+                    },
+                    (error) => {
+                        // 取得失敗時（地下・ビル影・位置情報オフなど）は緯度経度なしでテキストのみ保存
+                        saveLocationToFirebase(line, station, timeStr, null, null);
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            } else {
+                // GPS非対応ブラウザの場合
+                saveLocationToFirebase(line, station, timeStr, null, null);
+            }
+        }
+
+        // 🌐 Firebaseへのデータ書き込み分離処理
+        function saveLocationToFirebase(line, station, timeStr, lat, lng) {
+            const sendBtn = document.getElementById('send-location-btn');
+            sendBtn.innerText = "現在地を申告・更新";
+            sendBtn.style.pointerEvents = "auto";
+            sendBtn.style.background = "#00ff66";
+
+            const uploadData = {
                 line: line,
                 station: station,
-                time: timeStr
-            }).then(() => {
+                time: timeStr,
+                timestamp: Date.now()
+            };
+
+            // 座標が取得できていればデータに追加
+            if (lat !== null && lng !== null) {
+                uploadData.lat = lat;
+                uploadData.lng = lng;
+            }
+
+            locRef.child(myTeam).set(uploadData).then(() => {
                 alert(myTeam + "の現在地を更新しました！");
-                document.getElementById('station-input').value = ''; // 入力欄をクリア
+                document.getElementById('station-input').value = ''; 
             });
         }
 
@@ -348,30 +593,91 @@
 
                 if (!data) {
                     listContainer.innerHTML = '<div style="color:#888; padding:20px;">まだ位置の申告がありません</div>';
+                    myLastUpdateTimestamp = 0; 
+                    updateMapMarkers(null, "未設定");
                     return;
                 }
 
-                // 登録されているチームの位置情報をループして画面に生成
+                const currentOni = document.getElementById('current-oni-text').textContent;
+
+                if (data[myTeam]) {
+                    myLastUpdateTimestamp = data[myTeam].timestamp || 0;
+                } else {
+                    myLastUpdateTimestamp = 0;
+                }
+
                 for (let team in data) {
                     const pData = data[team];
                     const item = document.createElement('div');
                     item.className = 'member-location-item';
+
+                    const isOni = (team === currentOni);
+                    const nameColor = isOni ? '#ff3333' : '#00ccff';
+                    const textColor = isOni ? '#ff9999' : '#ffffff';
+
                     item.innerHTML = `
                         <div>
-                            <span class="member-name">${team}</span>
+                            <span class="member-name" style="color: ${nameColor};">${team}</span>
                             <span class="member-time">（${pData.time} 更新）</span>
                         </div>
-                        <div class="member-loc">
+                        <div class="member-loc" style="color: ${textColor};">
                             <span style="color:#ffcc00; font-size:0.8rem; display:block; text-align:right;">${pData.line}</span>
                             <span>${pData.station}</span>
                         </div>
                     `;
                     listContainer.appendChild(item);
                 }
+
+                // 🌐 申告データが更新されたら、マップ上のピンもリアルタイム同期
+                updateMapMarkers(data, currentOni);
             });
         }
 
-        // 重複なしでミッションを選ぶ内部関数
+        // 🌐 マップ上のマーカーを同期・描画する処理を追加
+        function updateMapMarkers(data, currentOni) {
+            if (!map) return; // マップタブを一度も開いていない場合は処理スキップ
+
+            // データベースから消えたチームのピンをマップから削除
+            for (let team in mapMarkers) {
+                if (!data || !data[team] || !data[team].lat) {
+                    map.removeLayer(mapMarkers[team]);
+                    delete mapMarkers[team];
+                }
+            }
+
+            if (!data) return;
+
+            for (let team in data) {
+                const pData = data[team];
+                
+                // 座標データを持っているチームのみ処理
+                if (pData.lat && pData.lng) {
+                    const isOni = (team === currentOni);
+                    const markerColor = isOni ? '#ff3333' : '#00ccff'; // 鬼は赤、逃走者は青
+                    
+                    if (mapMarkers[team]) {
+                        // 既存のピンがあれば位置と色、ポップアップ内容を更新
+                        mapMarkers[team].setLatLng([pData.lat, pData.lng]);
+                        mapMarkers[team].setStyle({ color: markerColor, fillColor: markerColor });
+                        mapMarkers[team].getPopup().setContent(`<b>${team}</b><br>${pData.line}<br>${pData.station}<br>（${pData.time} 更新）`);
+                    } else {
+                        // 新しくピン（円形マーカー）を生成
+                        const marker = L.circleMarker([pData.lat, pData.lng], {
+                            radius: 10,
+                            color: markerColor,
+                            fillColor: markerColor,
+                            fillOpacity: 0.8,
+                            weight: 2
+                        }).addTo(map);
+                        
+                        // ピンをタップした時にチーム詳細が出るポップアップを結びつけ
+                        marker.bindPopup(`<b>${team}</b><br>${pData.line}<br>${pData.station}<br>（${pData.time} 更新）`);
+                        mapMarkers[team] = marker;
+                    }
+                }
+            }
+        }
+
         function getRandomMission(current, usedList) {
             const remainingMissions = allMissions.filter(m => !usedList.includes(m));
             if (remainingMissions.length === 0) {
@@ -380,11 +686,11 @@
             return remainingMissions[Math.floor(Math.random() * remainingMissions.length)];
         }
 
-        // --- 操作系の関数群 ---
         function clickStart() {
             const firstMission = allMissions[Math.floor(Math.random() * allMissions.length)];
             const endTime = Date.now() + GAME_DURATION_MS;
-            gameRef.set({ 
+            
+            gameRef.update({ 
                 mission: firstMission, 
                 endTime: endTime,
                 usedMissions: [firstMission]
@@ -403,18 +709,30 @@
                     used.push(newMission);
                 }
 
+                const nextEndTime = Date.now() + GAME_DURATION_MS;
+
                 gameRef.update({ 
                     mission: newMission,
-                    usedMissions: used
+                    usedMissions: used,
+                    endTime: nextEndTime 
                 });
             });
         }
 
         function clickReset() {
             if(confirm("強制的にゲームを初期化しますか？（タイマー・出題履歴・全チームの位置もリセットされます）")) {
-                gameRef.set(null);
+                gameRef.update({ mission: null, endTime: null, usedMissions: null });
                 locRef.set(null); 
             }
+        }
+
+        function submitOni() {
+            const selectedOni = document.getElementById('oni-select').value;
+            gameRef.update({
+                currentOni: selectedOni
+            }).then(() => {
+                alert("現在の鬼を「" + selectedOni + "」に更新しました！");
+            });
         }
     </script>
 </body>
