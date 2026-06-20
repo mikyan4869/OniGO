@@ -478,7 +478,7 @@
                 if (status === 'cooldown') {
                     missionText.innerHTML = "【逃走者チーム待機中】<br>次のミッション開始までお待ちください";
                     missionText.style.color = "#ff9900";
-                    if (userRole === 'master' || userRole === 'rep') {
+                    if (userRole === 'master') {
                         if (resumeBtn) resumeBtn.style.display = 'inline-block';
                     }
                     if (userRole === 'master') resetBtn.style.display = 'inline-block';
