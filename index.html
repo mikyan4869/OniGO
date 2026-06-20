@@ -166,6 +166,13 @@
             </div>
         </div>
 
+        <div class="box-title" style="margin-top: 25px;">▼ ミッション履歴</div>
+        <div id="mission-log-box" style="background: #222; border: 1px solid #444; border-radius: 10px; padding: 10px 15px; width: 100%; box-sizing: border-box; max-height: 200px; overflow-y: auto; text-align: left; font-size: 0.95rem; color: #ccc;">
+            <ul id="mission-log-list" style="list-style-type: none; padding-left: 0; margin: 0;">
+                <li style="padding: 8px 0; color: #888;">まだ履歴はありません</li>
+            </ul>
+        </div>
+
         <div id="tab2-content" class="tab-content">
             <h1>現在地の共有</h1>
             
@@ -504,6 +511,33 @@
                 if (data.endTime !== currentSessionId) {
                     currentSessionId = data.endTime;
                 }
+
+                // ▼ここから追加：ミッション履歴の描画▼
+                const logList = document.getElementById('mission-log-list');
+                if (data && data.usedMissions && data.usedMissions.length > 0) {
+                    logList.innerHTML = ''; // 中身を一度リセット
+                    
+                    // 新しいミッションが上に来るように配列を逆順にする
+                    const logs = [...data.usedMissions].reverse();
+                    
+                    logs.forEach((missionStr, index) => {
+                        const li = document.createElement('li');
+                        li.style.padding = "10px 0";
+                        li.style.borderBottom = "1px solid #444";
+                        li.style.lineHeight = "1.4";
+                        
+                        // 配列の最初（＝一番最新のミッション）で、かつプレイ中の場合は「現在」マークをつける
+                        if (index === 0 && status === 'playing') {
+                            li.innerHTML = `<span style="color:#ffcc00; font-weight:bold; margin-right:5px;">[現在]</span> ${missionStr.replace(/\n/g, '<br>')}`;
+                        } else {
+                            li.innerHTML = `<span style="color:#888; margin-right:5px;">[済]</span> <span style="color:#aaa;">${missionStr.replace(/\n/g, '<br>')}</span>`;
+                        }
+                        logList.appendChild(li);
+                    });
+                } else {
+                    if (logList) logList.innerHTML = '<li style="padding: 8px 0; color: #888;">まだ履歴はありません</li>';
+                }
+                // ▲ここまで追加▲
 
                 clearInterval(localTimerInterval);
                 
