@@ -612,7 +612,7 @@
                                     if(latest && latest.status === 'playing') {
                                         gameRef.update({ 
                                             status: 'cooldown',
-                                            endTime: Date.now() + COOLDOWN_DURATION_MS
+                                            endTime: latest.endTime + COOLDOWN_DURATION_MS
                                         });
                                     }
                                 });
@@ -814,7 +814,7 @@
                     used.push(newMission);
                 }
 
-                const nextEndTime = Date.now() + GAME_DURATION_MS;
+                const nextEndTime = (data.status === 'cooldown') ? data.endTime + GAME_DURATION_MS : Date.now() + GAME_DURATION_MS;
 
                 gameRef.update({ 
                     status: 'playing', // 追加
